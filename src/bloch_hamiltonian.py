@@ -25,7 +25,7 @@ gamma_4 = np.kron(sigma_x, sigma_x)
 gamma_5 = np.kron(sigma_x, sigma_y)
 
 
-def bloch_hamiltonian(k, m0: float, bxy: float, bz: float, g1: float, g2: float, c4_mass=0.0) -> np.ndarray:
+def bloch_hamiltonian(k, m0: float, bxy: float, bz: float, g1: float, g2: float, c4_masses=None) -> np.ndarray:
     kx, ky, kz = k
 
     h = np.zeros((4, 4), dtype=complex)
@@ -36,7 +36,8 @@ def bloch_hamiltonian(k, m0: float, bxy: float, bz: float, g1: float, g2: float,
     h += g1 * (cos(kx) - cos(ky)) * sin(kz) * gamma_4
     h += g2 * sin(kx) * sin(ky) * sin(kz) * gamma_5
 
-    h += c4_mass * sin(kz) * gamma_5
+    if c4_masses is not None:
+        h += sin(kz) * (c4_masses[0] * gamma_4 + c4_masses[1] * gamma_5)
 
     return h
 
@@ -81,10 +82,10 @@ def high_symmetry_lines(dk: float):
     return ks, k_nodes
 
 
-def plot_band_structure(dk, m0: float, bxy: float, bz: float, g1: float, g2: float, c4_mass=0.0, save=True, fig_fname='bands'):
+def plot_band_structure(dk, m0: float, bxy: float, bz: float, g1: float, g2: float, c4_masses=None, save=True, fig_fname='bands'):
 
     def ham(k_vec) -> np.ndarray:
-        return bloch_hamiltonian(k_vec, m0, bxy, bz, g1, g2, c4_mass=c4_mass)
+        return bloch_hamiltonian(k_vec, m0, bxy, bz, g1, g2, c4_masses=c4_masses)
 
     ks, k_nodes = high_symmetry_lines(dk)
 

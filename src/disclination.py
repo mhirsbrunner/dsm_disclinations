@@ -46,6 +46,15 @@ def disclination_dimensions(nx: int):
     return bottom_width, top_width, left_height, right_height
 
 
+def disc_core_ind(nx: int):
+    if nx % 2 == 0:
+        raise ValueError('Plaquette-centered disclinations have no core site (nx is even).')
+
+    bottom_width, top_width, left_height, right_height = disclination_dimensions(nx)
+
+    return (right_height - 1) * bottom_width + top_width
+
+
 def ind_to_coord(nx: int, ind: int):
     bottom_width, top_width, left_height, right_height = disclination_dimensions(nx)
 
@@ -86,7 +95,7 @@ def number_of_sites(nx: int):
     return bottom_width * right_height + top_width * (left_height - right_height)
 
 
-def x_hopping_matrix(nx):
+def x_hopping_matrix(nx, core_hopping=False):
     bottom_width, top_width, left_height, right_height = disclination_dimensions(nx)
 
     x_hopping_sites = np.zeros(0)
@@ -99,10 +108,15 @@ def x_hopping_matrix(nx):
 
     x_hopping_sites = np.concatenate((x_hopping_sites, np.ones(top_width - 1, dtype=complex)))
 
-    return np.diag(x_hopping_sites, k=1)
+    if not core_hopping and nx % 2 == 1:
+        x_hopping_sites[bottom_width * (right_height - 1) + top_width - 1] = 0
+        x_hopping_sites[bottom_width * (right_height - 1) + top_width] = 0
+
+    hop_mat = np.diag(x_hopping_sites, k=1)
+    return hop_mat.T
 
 
-def y_hopping_matrix(nx):
+def y_hopping_matrix(nx, core_hopping=False):
     bottom_width, top_width, left_height, right_height = disclination_dimensions(nx)
 
     y_hopping_sites_1 = np.concatenate((np.ones(bottom_width * (right_height - 1) + top_width, dtype=complex),
@@ -110,7 +124,11 @@ def y_hopping_matrix(nx):
     y_hopping_sites_2 = np.concatenate((np.zeros(bottom_width * right_height, dtype=complex),
                                         np.ones(top_width * (left_height - right_height - 1), dtype=complex)))
 
-    return np.diag(y_hopping_sites_1, k=nx) + np.diag(y_hopping_sites_2, k=nx // 2)
+    if not core_hopping and nx % 2 == 1:
+        y_hopping_sites_1[bottom_width * (right_height - 2) + top_width] = 0
+
+    hop_mat = np.diag(y_hopping_sites_1, k=nx) + np.diag(y_hopping_sites_2, k=nx // 2)
+    return hop_mat.T
 
 
 def xy_hopping_matrix(nx):
@@ -148,6 +166,7 @@ def disclination_hopping_matrix(nx, nnn=False):
 
     num_disc_sites = min(bottom_width - top_width, left_height - right_height)
 
+    # TODO: This could be wrong, need to think about forwards and backwards matrices
     if nnn:
         # x+y
         ind_1 = [bottom_width * right_height - ii - 2 for ii in range(num_disc_sites)]
@@ -162,23 +181,28 @@ def disclination_hopping_matrix(nx, nnn=False):
 
         ind_2[-1] -= bottom_width - top_width
 
-        for (ii, jj) in zip(ind_1, ind_2):
+        for (ii, jj) in zip(ind_2, ind_1):
             hopping_matrix[ii, jj] = -1
     else:
         ind_1 = [bottom_width * right_height - ii - 1 for ii in range(num_disc_sites)]
         ind_2 = [n_tot - 1 - top_width * ii for ii in range(num_disc_sites)]
 
-        for (ii, jj) in zip(ind_1, ind_2):
+        for (ii, jj) in zip(ind_2, ind_1):
             hopping_matrix[ii, jj] = 1
 
     return hopping_matrix
 
 
-def disclination_hamiltonian(kz: float, nx: int, m0: float, bxy: float, bz: float, g1: float, g2: float, c4_mass=0.0):
+def disclination_hamiltonian(kz: float, nx: int, m0: float, bxy: float, bz: float, g1: float, g2: float,
+                             c4_masses=None, core_mu=None):
     # Build Hamiltonian blocks
     u_4 = slg.expm(1j * pi / 4 * np.identity(4)) @ slg.expm(-1j * pi / 4 * (np.kron(2 * sigma_0 - sigma_z, sigma_z)))
 
-    h_onsite = (m0 - 2 * bxy - bz * (1 - cos(kz))) * gamma_3 + c4_mass * sin(kz) * gamma_5
+    h_onsite = (m0 - 2 * bxy - bz * (1 - cos(kz))) * gamma_3
+
+    if c4_masses is not None:
+        h_onsite += sin(kz) * (c4_masses[0] * gamma_4 + c4_masses[1] * gamma_5)
+
     h_x = -1j / 2 * gamma_1 + 1 / 2 * bxy * gamma_3 + 1 / 2 * g1 * sin(kz) * gamma_4
     h_y = -1j / 2 * gamma_2 + 1 / 2 * bxy * gamma_3 - 1 / 2 * g1 * sin(kz) * gamma_4
     h_xy = -1 / 4 * g2 * sin(kz) * gamma_5
@@ -193,31 +217,37 @@ def disclination_hamiltonian(kz: float, nx: int, m0: float, bxy: float, bz: floa
     # Onsite Hamiltonian
     ham += np.kron(np.identity(n_sites, dtype=complex), h_onsite)
 
+    if core_mu is not None:
+        core_inds = np.zeros(n_sites)
+        core_inds[disc_core_ind(nx)] = 1
+        ham += np.kron(np.diag(core_inds), core_mu * np.identity(4))
+
     # X-Hopping
-    x_hopping = np.kron(x_hopping_matrix(nx), h_x)
+    x_hopping = np.kron(x_hopping_matrix(nx, core_hopping=False), h_x)
 
     ham += x_hopping + x_hopping.conj().T
 
     # Y-Hopping
-    y_hopping = np.kron(y_hopping_matrix(nx), h_y)
+    y_hopping = np.kron(y_hopping_matrix(nx, core_hopping=False), h_y)
     ham += y_hopping + y_hopping.conj().T
 
     # XY-Hopping
+    # TODO: This is probably wrong, messes up the charge density with no disclination
     xy_hopping = np.kron(xy_hopping_matrix(nx), h_xy)
     ham += xy_hopping + xy_hopping.conj().T
 
     # Disclination Hopping
-    disc_hopping = np.kron(disclination_hopping_matrix(nx, nnn=False), np.dot(nlg.inv(u_4), h_y))
-    ham += disc_hopping + disc_hopping.conj().T
-
-    disc_hopping = np.kron(disclination_hopping_matrix(nx, nnn=True), np.dot(nlg.inv(u_4), h_xy))
-    ham += disc_hopping + disc_hopping.conj().T
+    # disc_hopping = np.kron(disclination_hopping_matrix(nx, nnn=False), np.dot(nlg.inv(u_4), h_y))
+    # ham += disc_hopping + disc_hopping.conj().T
+    #
+    # disc_hopping = np.kron(disclination_hopping_matrix(nx, nnn=True), np.dot(nlg.inv(u_4), h_xy))
+    # ham += disc_hopping + disc_hopping.conj().T
 
     return ham
 
 
-def calculate_disclination_rho(nkz: int, nx: int, m0: float, bxy: float, bz: float, g1: float, g2: float, c4_mass=0.0,
-                               use_gpu=True, fname='ed_disclination_ldos'):
+def calculate_disclination_rho(nkz: int, nx: int, m0: float, bxy: float, bz: float, g1: float, g2: float,
+                               c4_masses=(0.0, 0.0), core_mu=None, use_gpu=True, fname='ed_disclination_ldos'):
     norb = 4
 
     kz_ax = np.linspace(0, 2 * pi, nkz + 1)[:-1]
@@ -226,18 +256,18 @@ def calculate_disclination_rho(nkz: int, nx: int, m0: float, bxy: float, bz: flo
 
     rho = np.zeros(number_of_sites(nx))
 
-    for kz in kz_ax:
+    for kz in tqdm(kz_ax):
         if use_gpu:
             import cupy as cp
             import cupy.linalg as clg
 
-            h = cp.asarray(disclination_hamiltonian(kz, nx, m0, bxy, bz, g1, g2, c4_mass=0.0))
+            h = cp.asarray(disclination_hamiltonian(kz, nx, m0, bxy, bz, g1, g2, c4_masses=c4_masses, core_mu=core_mu))
 
             evals, evecs = clg.eigh(h)
             evals = evals.get()
             evecs = evecs.get()
         else:
-            h = disclination_hamiltonian(kz, nx, m0, bxy, bz, g1, g2, c4_mass=0.0)
+            h = disclination_hamiltonian(kz, nx, m0, bxy, bz, g1, g2, c4_masses=c4_masses, core_mu=core_mu)
 
             evals, evecs = nlg.eigh(h)
 
@@ -251,8 +281,10 @@ def calculate_disclination_rho(nkz: int, nx: int, m0: float, bxy: float, bz: flo
 
         rho += rho_kz * dk
 
+    rho = rho / (2 * np.pi)
+
     results = rho
-    params = (nkz, nx, m0, bxy, bz, g1, g2, c4_mass)
+    params = (nkz, nx, m0, bxy, bz, g1, g2, c4_masses)
     data = (results, params)
 
     with open(data_dir / (fname + '.pickle'), 'wb') as handle:
@@ -261,12 +293,16 @@ def calculate_disclination_rho(nkz: int, nx: int, m0: float, bxy: float, bz: flo
     return rho
 
 
-def calculate_bound_charge(nx: int, threshold: int, rho):
+def calculate_bound_charge(nx: int, threshold: int, rho, exclude_core=False):
     rho = rho - np.mean(rho)
+    core_ind = disc_core_ind(nx)
+
     q_bound = 0
 
     for ii, q in enumerate(rho):
-        if bulk_ind(nx, threshold, ii):
+        if ii == core_ind and exclude_core:
+            continue
+        elif bulk_ind(nx, threshold, ii):
             q_bound += q
 
     return q_bound
@@ -281,7 +317,7 @@ def response_coef(m0: float, bz: float):
 
 
 def generate_data(nkz: int, nx: int, m0: float, bxy: float, g1: float, g2: float, coef_min: float, coef_max: float,
-                  bz_pts: int, c4_mass=0.0, use_gpu=True, data_folder_name=None):
+                  bz_pts: int, c4_masses=(0.0, 0.0), core_mu=None, use_gpu=True, data_folder_name=None):
 
     if data_folder_name is not None:
         os.makedirs(data_dir / data_folder_name, exist_ok=True)
@@ -295,7 +331,9 @@ def generate_data(nkz: int, nx: int, m0: float, bxy: float, g1: float, g2: float
     for coef in coef_ax:
         bz_ax.append(m0 / (1 - cos(pi * coef)))
 
-    for ii in tqdm(range(len(bz_ax))):
+    print('Starting calculation...')
+    for ii in range(len(bz_ax)):
         bz = bz_ax[ii]
-        calculate_disclination_rho(nkz, nx, m0, bxy, bz, g1, g2, c4_mass=c4_mass, use_gpu=use_gpu,
+        calculate_disclination_rho(nkz, nx, m0, bxy, bz, g1, g2, c4_masses=c4_masses, core_mu=core_mu, use_gpu=use_gpu,
                                    fname=data_folder_name + f'/data_run_{ii}')
+        print(f'Finished run {ii+1}/{len(bz_ax)}.\n')
