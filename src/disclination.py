@@ -237,11 +237,11 @@ def disclination_hamiltonian(kz: float, nx: int, m0: float, bxy: float, bz: floa
     ham += xy_hopping + xy_hopping.conj().T
 
     # Disclination Hopping
-    # disc_hopping = np.kron(disclination_hopping_matrix(nx, nnn=False), np.dot(nlg.inv(u_4), h_y))
-    # ham += disc_hopping + disc_hopping.conj().T
+    disc_hopping = np.kron(disclination_hopping_matrix(nx, nnn=False), np.dot(nlg.inv(u_4), h_y))
+    ham += disc_hopping + disc_hopping.conj().T
     #
-    # disc_hopping = np.kron(disclination_hopping_matrix(nx, nnn=True), np.dot(nlg.inv(u_4), h_xy))
-    # ham += disc_hopping + disc_hopping.conj().T
+    disc_hopping = np.kron(disclination_hopping_matrix(nx, nnn=True), np.dot(nlg.inv(u_4), h_xy))
+    ham += disc_hopping + disc_hopping.conj().T
 
     return ham
 
@@ -293,8 +293,10 @@ def calculate_disclination_rho(nkz: int, nx: int, m0: float, bxy: float, bz: flo
     return rho
 
 
-def calculate_bound_charge(nx: int, threshold: int, rho, exclude_core=False):
-    rho = rho - np.mean(rho)
+def calculate_bound_charge(nx: int, threshold: int, rho, subtract_avg=True, exclude_core=False):
+    if subtract_avg:
+        rho = rho - np.mean(rho)
+
     core_ind = disc_core_ind(nx)
 
     q_bound = 0
@@ -316,8 +318,8 @@ def response_coef(m0: float, bz: float):
         return np.arccos(arg) / pi
 
 
-def generate_data(nkz: int, nx: int, m0: float, bxy: float, g1: float, g2: float, coef_min: float, coef_max: float,
-                  bz_pts: int, c4_masses=(0.0, 0.0), core_mu=None, use_gpu=True, data_folder_name=None):
+def calculate_bound_charge_vs_nu(nkz: int, nx: int, m0: float, bxy: float, g1: float, g2: float, coef_min: float, coef_max: float,
+                                 bz_pts: int, c4_masses=(0.0, 0.0), core_mu=None, use_gpu=True, data_folder_name=None):
 
     if data_folder_name is not None:
         os.makedirs(data_dir / data_folder_name, exist_ok=True)
@@ -337,3 +339,31 @@ def generate_data(nkz: int, nx: int, m0: float, bxy: float, g1: float, g2: float
         calculate_disclination_rho(nkz, nx, m0, bxy, bz, g1, g2, c4_masses=c4_masses, core_mu=core_mu, use_gpu=use_gpu,
                                    fname=data_folder_name + f'/data_run_{ii}')
         print(f'Finished run {ii+1}/{len(bz_ax)}.\n')
+
+
+def calculate_dq_dnu(nkz: int, nx: int, m0: float, bxy: float, g1: float, g2: float, coef_min: float, coef_max: float,
+                     bz_pts: int, dbz: float, c4_masses=None, core_mu=None, use_gpu=True, data_folder_name=None):
+
+    if data_folder_name is not None:
+        os.makedirs(data_dir / data_folder_name, exist_ok=True)
+
+    if coef_min < 0 or coef_min > 1 or coef_max < 0 or coef_max > 1:
+        raise ValueError("The response coefficient must be between 0 and 1.")
+
+    coef_ax = np.linspace(coef_max, coef_min, bz_pts)
+
+    bz_ax = []
+    for coef in coef_ax:
+        bz_ax.append(m0 / (1 - cos(pi * coef)))
+
+    print('Starting calculation...')
+    for ii in range(len(bz_ax)):
+        bz = bz_ax[ii]
+        calculate_disclination_rho(nkz, nx, m0, bxy, bz, g1, g2, c4_masses=c4_masses, core_mu=core_mu, use_gpu=use_gpu,
+                                   fname=data_folder_name + f'/run_0_{ii}')
+        calculate_disclination_rho(nkz, nx, m0, bxy, bz + dbz, g1, g2, c4_masses=c4_masses, core_mu=core_mu,
+                                   use_gpu=use_gpu, fname=data_folder_name + f'/run_1_{ii}')
+
+        print(f'\n\nFinished run {ii+1}/{len(bz_ax)}.\n')
+        # print(f'{response_coef(m0, bz)=}')
+        # print(f'{response_coef(m0, bz+dbz)=}')

@@ -57,7 +57,7 @@ def disclination_graph(nx: int):
     return graph, pos
 
 
-def plot_disclination_rho(data_fname='ed_disclination_ldos', save=True,
+def plot_disclination_rho(subtract_background=False, data_fname='ed_disclination_ldos', save=True,
                           fig_fname='ed_disclination_rho', close_disc=True):
     results, params = utils.load_results(data_fname)
     nkz, nx, m0, bxy, bz, g1, g2, c4_masses = params
@@ -71,10 +71,13 @@ def plot_disclination_rho(data_fname='ed_disclination_ldos', save=True,
         print('Coefficient: N/A (insulating phase, maybe topological!)')
 
     # Subtract background charge and calculate the total charge (mod 8)
-    data = rho - np.mean(rho)
+    if subtract_background:
+        data = rho - np.mean(rho)
+    else:
+        data = rho
+
     dmax = np.max(np.abs(data))
-    normalized_data = data / np.max(np.abs(data))
-    alpha_data = np.abs(normalized_data)
+    normalized_data = data / dmax
 
     # Generate list of lattice sites and positions
     x = []
@@ -92,19 +95,15 @@ def plot_disclination_rho(data_fname='ed_disclination_ldos', save=True,
             coords = site
         x.append(coords[0])
         y.append(coords[1])
-
-    # Make colormap
-    cmap = plt.cm.bwr
-    my_cmap = cmap(np.arange(cmap.N // 2, cmap.N))
-    my_cmap[:, -1] = np.linspace(0, 1, cmap.N // 2)
-    my_cmap = ListedColormap(my_cmap)
-
     # Plot charge density
     fig, ax = plt.subplots(figsize=(6, 4))
     marker_scale = 250
-    # im = ax.scatter(x, y, s=marker_scale * np.abs(normalized_data), c=np.abs(data), cmap=my_cmap, marker='o', vmin=0)
-    im = ax.scatter(x, y, s=marker_scale * np.abs(normalized_data), c=data, cmap='bwr', marker='o', vmax=dmax,
-                    vmin=-dmax)
+    if subtract_background:
+        im = ax.scatter(x, y, s=marker_scale * np.abs(normalized_data), c=data, cmap='bwr', marker='o', vmax=dmax,
+                        vmin=-dmax)
+    else:
+        im = ax.scatter(x, y, s=marker_scale * np.abs(normalized_data), c=data, cmap='Reds', marker='o')
+
     ax.scatter(x, y, s=2, c='black')
     ax.set_aspect('equal')
 
@@ -192,51 +191,115 @@ def plot_disclination_rho_vs_r(data_fname='ed_disclination_ldos', save=True,
     plt.show()
 
 
-def read_data(threshold=1, data_folder_name=None, exclude_core=False):
-    if data_folder_name is not None:
-        data_location = data_dir / data_folder_name
-    else:
-        data_location = data_dir
-
-    filenames = [f for f in listdir(data_location) if isfile(join(data_location, f))]
-
-    m0s = []
-    bzs = []
-    coefs = []
-    charges = []
-
-    for fname in filenames:
-        with open(data_location / fname, 'rb') as handle:
-            rho, params = pkl.load(handle)
-
-        nkz, nx, m0, bxy, bz, g1, g2, c4_mass = params
-
-        m0s.append(m0)
-        bzs.append(bz)
-        coefs.append(disc.response_coef(m0, bz))
-        charges.append(disc.calculate_bound_charge(nx, threshold, rho, exclude_core=exclude_core))
-
-    print(f"Parameters: {nkz=}, {nx=}, {m0=}, {bxy=}, {g1=}, {g2=}, {c4_mass=}")
-
-    return coefs, charges
-
-
-def plot_q_vs_coef(threshold=1, slope_guess=1, exclude_core=False, data_folder_name=None, save=True,
+def plot_q_vs_coef(threshold=1, slope_guess=None, exclude_core=False, data_folder_name=None, save=True,
                    fig_fname="q_vs_coef", ylim=None):
-    coefs, charges = read_data(threshold, data_folder_name, exclude_core=exclude_core)
+    def read_data(t=1, dfn=None, xc=False):
+        if dfn is not None:
+            data_location = data_dir / dfn
+        else:
+            data_location = data_dir
+
+        filenames = [f for f in listdir(data_location) if isfile(join(data_location, f))]
+
+        m0s = []
+        bzs = []
+        x = []
+        y = []
+
+        for fname in filenames:
+            with open(data_location / fname, 'rb') as handle:
+                rho, params = pkl.load(handle)
+
+            nkz, nx, m0, bxy, bz, g1, g2, c4_mass = params
+
+            m0s.append(m0)
+            bzs.append(bz)
+            x.append(disc.response_coef(m0, bz))
+            y.append(disc.calculate_bound_charge(nx, t, rho, exclude_core=xc))
+
+        return x, y
+
+    coefs, charges = read_data(threshold, data_folder_name, xc=exclude_core)
     coefs = np.array(coefs)
     charges = np.array(charges)
 
     plt.style.use(styles_dir / 'line_plot.mplstyle')
     fig, ax = plt.subplots(figsize=(6, 4))
 
-    ax.plot([0, 1], [0, slope_guess], 'k--')
-    ax.plot(coefs, np.abs(charges), 'ro')
+    if slope_guess is not None:
+        ax.plot([0, 1], [0, slope_guess], 'k--')
+    ax.plot(coefs, charges, 'ro')
 
     ax.set_xlabel(r'$v$')
     ax.set_xticks([0, 1])
 
     ax.set_ylabel(r'$Q_0$')
+
+    if ylim is not None:
+        ax.set_ylim(ylim)
+
+    plt.tight_layout()
+
+    if save:
+        plt.savefig(figure_dir / (fig_fname + '.pdf'))
+        plt.savefig(figure_dir / (fig_fname + '.png'))
+
+    plt.show()
+
+
+def plot_dq_dnu(threshold=1, slope_guess=None, exclude_core=False, data_folder_name=None, save=True,
+                fig_fname="dq_dnu_vs_coef", ylim=None):
+    def read_data(t=1, dfn=None, xc=False):
+        if dfn is not None:
+            data_location = data_dir / dfn
+        else:
+            data_location = data_dir
+
+        filenames = [f for f in listdir(data_location) if isfile(join(data_location, f))]
+
+        m0s = []
+        bzs = []
+        coefs = []
+        rhos = []
+
+        for fname in filenames:
+            with open(data_location / fname, 'rb') as handle:
+                rho, params = pkl.load(handle)
+
+            nkz, nx, m0, bxy, bz, g1, g2, c4_mass = params
+
+            m0s.append(m0)
+            bzs.append(bz)
+            coefs.append(disc.response_coef(m0, bz))
+            rhos.append(rho)
+
+        temp = sorted(zip(coefs, rhos))
+        sorted_coefs = np.asarray(list(x for x, _ in temp))
+        sorted_rhos = np.asarray(list(x for _, x in temp))
+
+        d_nu = np.diff(np.reshape(sorted_coefs, (-1, 2)), axis=1).squeeze()
+        d_rho = np.diff(np.reshape(sorted_rhos, (sorted_rhos.shape[0] // 2, 2, -1)), axis=1).squeeze()
+
+        x = list(x[-1] for x in np.reshape(sorted_coefs, (-1, 2)))
+        y = list(disc.calculate_bound_charge(nx, t, d_rho[ii], subtract_avg=True, exclude_core=xc) / d_nu[ii]
+                 for ii in range(len(d_rho)))
+
+        return x, y
+
+    nu, dqdnu = read_data(threshold, data_folder_name, xc=exclude_core)
+
+    plt.style.use(styles_dir / 'line_plot.mplstyle')
+    fig, ax = plt.subplots(figsize=(6, 4))
+
+    if slope_guess is not None:
+        ax.plot([0, 1], [0, slope_guess], 'k--')
+
+    ax.plot(nu, dqdnu, 'ro')
+
+    ax.set_xlabel(r'$v$')
+    ax.set_xticks([0, 1])
+
+    ax.set_ylabel(r'$dQ/d\nu$')
 
     if ylim is not None:
         ax.set_ylim(ylim)

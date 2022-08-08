@@ -82,7 +82,8 @@ def high_symmetry_lines(dk: float):
     return ks, k_nodes
 
 
-def plot_band_structure(dk, m0: float, bxy: float, bz: float, g1: float, g2: float, c4_masses=None, save=True, fig_fname='bands'):
+def plot_band_structure(dk, m0: float, bxy: float, bz: float, g1: float, g2: float, c4_masses=None, save=True,
+                        fig_fname='bands'):
 
     def ham(k_vec) -> np.ndarray:
         return bloch_hamiltonian(k_vec, m0, bxy, bz, g1, g2, c4_masses=c4_masses)
