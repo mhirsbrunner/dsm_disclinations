@@ -197,6 +197,7 @@ def disclination_hamiltonian(kz: float, nx: int, m0: float, bxy: float, bz: floa
                              c4_masses=None, core_mu=None):
     # Build Hamiltonian blocks
     u_4 = slg.expm(1j * pi / 4 * np.identity(4)) @ slg.expm(-1j * pi / 4 * (np.kron(2 * sigma_0 - sigma_z, sigma_z)))
+    u_4 = u_4.conj().T
 
     h_onsite = (m0 - 2 * bxy - bz * (1 - cos(kz))) * gamma_3
 
