@@ -42,6 +42,26 @@ def bloch_hamiltonian(k, m0: float, bxy: float, bz: float, g1: float, g2: float,
     return h
 
 
+def z_bloch_hamiltonian(k, m0: float, bxy: float, bz: float, g1: float, g2: float, c4_masses=None) -> np.ndarray:
+    kx, ky = k
+
+    h0 = np.zeros((4, 4), dtype=complex)
+    hz = np.zeros((4, 4), dtype=complex)
+
+    h0 += sin(kx) * gamma_1
+    h0 += sin(ky) * gamma_2
+    h0 += (m0 - bxy * (2 - cos(kx) - cos(ky)) - bz) * gamma_3
+
+    hz += 1 / 2 * bz * gamma_3
+    hz += 1j / 2 * g1 * (cos(kx) - cos(ky)) * gamma_4
+    hz += 1j / 2 * g2 * sin(kx) * sin(ky) * gamma_5
+
+    if c4_masses is not None:
+        hz += 1j / 2 * (c4_masses[0] * gamma_4 + c4_masses[1] * gamma_5)
+
+    return h0, hz
+
+
 def high_symmetry_lines(dk: float):
     gamma = (0, 0, 0)
     x = (pi, 0, 0)

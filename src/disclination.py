@@ -166,7 +166,6 @@ def disclination_hopping_matrix(nx, nnn=False):
 
     num_disc_sites = min(bottom_width - top_width, left_height - right_height)
 
-    # TODO: This could be wrong, need to think about forwards and backwards matrices
     if nnn:
         # x+y
         ind_1 = [bottom_width * right_height - ii - 2 for ii in range(num_disc_sites)]
@@ -194,7 +193,7 @@ def disclination_hopping_matrix(nx, nnn=False):
 
 
 def disclination_hamiltonian(kz: float, nx: int, m0: float, bxy: float, bz: float, g1: float, g2: float,
-                             c4_masses=None, core_mu=None):
+                             c4_masses=None, core_mu=None, core_hopping=False):
     # Build Hamiltonian blocks
     u_4 = slg.expm(1j * pi / 4 * np.identity(4)) @ slg.expm(-1j * pi / 4 * (np.kron(2 * sigma_0 - sigma_z, sigma_z)))
     u_4 = u_4.conj().T
@@ -224,16 +223,15 @@ def disclination_hamiltonian(kz: float, nx: int, m0: float, bxy: float, bz: floa
         ham += np.kron(np.diag(core_inds), core_mu * np.identity(4))
 
     # X-Hopping
-    x_hopping = np.kron(x_hopping_matrix(nx, core_hopping=False), h_x)
+    x_hopping = np.kron(x_hopping_matrix(nx, core_hopping=core_hopping), h_x)
 
     ham += x_hopping + x_hopping.conj().T
 
     # Y-Hopping
-    y_hopping = np.kron(y_hopping_matrix(nx, core_hopping=False), h_y)
+    y_hopping = np.kron(y_hopping_matrix(nx, core_hopping=core_hopping), h_y)
     ham += y_hopping + y_hopping.conj().T
 
     # XY-Hopping
-    # TODO: This is probably wrong, messes up the charge density with no disclination
     xy_hopping = np.kron(xy_hopping_matrix(nx), h_xy)
     ham += xy_hopping + xy_hopping.conj().T
 
@@ -248,7 +246,8 @@ def disclination_hamiltonian(kz: float, nx: int, m0: float, bxy: float, bz: floa
 
 
 def calculate_disclination_rho(nkz: int, nx: int, m0: float, bxy: float, bz: float, g1: float, g2: float,
-                               c4_masses=(0.0, 0.0), core_mu=None, use_gpu=True, fname='ed_disclination_ldos'):
+                               c4_masses=(0.0, 0.0), core_mu=None, core_hopping=False,
+                               use_gpu=True, fname='ed_disclination_ldos'):
     norb = 4
 
     kz_ax = np.linspace(0, 2 * pi, nkz + 1)[:-1]
@@ -262,13 +261,15 @@ def calculate_disclination_rho(nkz: int, nx: int, m0: float, bxy: float, bz: flo
             import cupy as cp
             import cupy.linalg as clg
 
-            h = cp.asarray(disclination_hamiltonian(kz, nx, m0, bxy, bz, g1, g2, c4_masses=c4_masses, core_mu=core_mu))
+            h = cp.asarray(disclination_hamiltonian(kz, nx, m0, bxy, bz, g1, g2, c4_masses=c4_masses, core_mu=core_mu,
+                                                    core_hopping=core_hopping))
 
             evals, evecs = clg.eigh(h)
             evals = evals.get()
             evecs = evecs.get()
         else:
-            h = disclination_hamiltonian(kz, nx, m0, bxy, bz, g1, g2, c4_masses=c4_masses, core_mu=core_mu)
+            h = disclination_hamiltonian(kz, nx, m0, bxy, bz, g1, g2, c4_masses=c4_masses, core_mu=core_mu,
+                                         core_hopping=core_hopping)
 
             evals, evecs = nlg.eigh(h)
 
@@ -319,8 +320,10 @@ def response_coef(m0: float, bz: float):
         return np.arccos(arg) / pi
 
 
-def calculate_bound_charge_vs_nu(nkz: int, nx: int, m0: float, bxy: float, g1: float, g2: float, coef_min: float, coef_max: float,
-                                 bz_pts: int, c4_masses=(0.0, 0.0), core_mu=None, use_gpu=True, data_folder_name=None):
+def calculate_bound_charge_vs_nu(nkz: int, nx: int, m0: float, bxy: float, g1: float, g2: float,
+                                 coef_min: float, coef_max: float, bz_pts: int,
+                                 c4_masses=(0.0, 0.0), core_mu=None, core_hopping=False,
+                                 use_gpu=True, data_folder_name=None):
 
     if data_folder_name is not None:
         os.makedirs(data_dir / data_folder_name, exist_ok=True)
@@ -337,7 +340,8 @@ def calculate_bound_charge_vs_nu(nkz: int, nx: int, m0: float, bxy: float, g1: f
     print('Starting calculation...')
     for ii in range(len(bz_ax)):
         bz = bz_ax[ii]
-        calculate_disclination_rho(nkz, nx, m0, bxy, bz, g1, g2, c4_masses=c4_masses, core_mu=core_mu, use_gpu=use_gpu,
+        calculate_disclination_rho(nkz, nx, m0, bxy, bz, g1, g2, c4_masses=c4_masses, core_mu=core_mu,
+                                   core_hopping=core_hopping, use_gpu=use_gpu,
                                    fname=data_folder_name + f'/data_run_{ii}')
         print(f'Finished run {ii+1}/{len(bz_ax)}.\n')
 

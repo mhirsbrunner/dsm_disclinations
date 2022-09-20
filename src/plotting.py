@@ -7,7 +7,7 @@ import src.disclination as disc
 import src.utils as utils
 
 import numpy as np
-from numpy import sin, cos, pi
+import scipy as sp
 
 from pathlib import Path
 import pickle as pkl
@@ -58,13 +58,14 @@ def disclination_graph(nx: int):
 
 
 def plot_disclination_rho(subtract_background=False, data_fname='ed_disclination_ldos', save=True,
-                          fig_fname='ed_disclination_rho', close_disc=True):
+                          fig_fname='ed_disclination_rho', close_disc=True, threshold=None):
     results, params = utils.load_results(data_fname)
     nkz, nx, m0, bxy, bz, g1, g2, c4_masses = params
     rho = results
 
     print(f"Parameters: {nkz=}, {nx=}, {m0=}, {bxy=}, {bz=}, {g1=}, {g2=}, {c4_masses=}")
-    print(f'Bound Charge: {disc.calculate_bound_charge(nx, nx // 2, rho)}')
+    if threshold is not None:
+        print(f'Bound Charge: {disc.calculate_bound_charge(nx, threshold, rho)}')
     try:
         print(f'Coefficient: {disc.response_coef(m0, bz)}')
     except ValueError:
@@ -169,11 +170,24 @@ def plot_disclination_rho_vs_r(data_fname='ed_disclination_ldos', save=True,
 
     charge_density = list(q / (np.pi * r ** 2) for q, r in zip(q_vs_r[1:], sorted_r[1:]))
 
+    # Fitting
+    def exp_decay(xx, a, b, c):
+        yy = a + b * np.exp(-1 * c * xx)
+        return yy
+
+    def powerlaw_decay(xx, a, b, c):
+        yy = a + b * xx + c * xx ** 2
+        return yy
+
+    params, cov = sp.optimize.curve_fit(exp_decay, sorted_r[1:], charge_density)
+    fit_y = exp_decay(np.asarray(sorted_r[1:]), params[0], params[1], params[2])
+
     # Plot charge density vs r
     plt.style.use(styles_dir / 'line_plot.mplstyle')
     fig, ax = plt.subplots(figsize=(6, 4))
     ax.axhline(y=0.0, color='k', linestyle='-')
     ax.plot(sorted_r[1:], charge_density, 'ro-')
+    ax.plot(sorted_r[1:], fit_y, 'b--')
 
     ax.set_xlabel(r'$r$ (a.u.)')
     plt.xticks(list(plt.xticks()[0]) + [0, ])
