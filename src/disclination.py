@@ -192,20 +192,19 @@ def disclination_hopping_matrix(nx, nnn=False):
     return hopping_matrix
 
 
-def disclination_hamiltonian(kz: float, nx: int, m0: float, bxy: float, bz: float, g1: float, g2: float,
-                             c4_masses=None, core_mu=None, core_hopping=False):
+def disclination_hamiltonian(kz: float, nx: int, params: dict, core_mu=None, core_hopping=False):
     # Build Hamiltonian blocks
     u_4 = slg.expm(1j * pi / 4 * np.identity(4)) @ slg.expm(-1j * pi / 4 * (np.kron(2 * sigma_0 - sigma_z, sigma_z)))
     u_4 = u_4.conj().T
 
-    h_onsite = (m0 - 2 * bxy - bz * (1 - cos(kz))) * gamma_3
+    h_onsite = (params['m0'] - 2 * params['bxy'] - params['bz'] * (1 - cos(kz))) * gamma_3
 
-    if c4_masses is not None:
-        h_onsite += sin(kz) * (c4_masses[0] * gamma_4 + c4_masses[1] * gamma_5)
+    if 'c4_masses' in params:
+        h_onsite += sin(kz) * (params['c4_masses'][0] * gamma_4 + params['c4_masses'][1] * gamma_5)
 
-    h_x = -1j / 2 * gamma_1 + 1 / 2 * bxy * gamma_3 + 1 / 2 * g1 * sin(kz) * gamma_4
-    h_y = -1j / 2 * gamma_2 + 1 / 2 * bxy * gamma_3 - 1 / 2 * g1 * sin(kz) * gamma_4
-    h_xy = -1 / 4 * g2 * sin(kz) * gamma_5
+    h_x = -1j / 2 * gamma_1 + 1 / 2 * params['bxy'] * gamma_3 + 1 / 2 * params['g1'] * sin(kz) * gamma_4
+    h_y = -1j / 2 * gamma_2 + 1 / 2 * params['bxy'] * gamma_3 - 1 / 2 * params['g1'] * sin(kz) * gamma_4
+    h_xy = -1 / 4 * params['g2'] * sin(kz) * gamma_5
 
     norb = 4
 
@@ -245,9 +244,90 @@ def disclination_hamiltonian(kz: float, nx: int, m0: float, bxy: float, bz: floa
     return ham
 
 
-def calculate_disclination_rho(nkz: int, nx: int, m0: float, bxy: float, bz: float, g1: float, g2: float,
-                               c4_masses=(0.0, 0.0), core_mu=None, core_hopping=False,
-                               use_gpu=True, fname='ed_disclination_ldos'):
+def disclination_hamiltonian_z_blocks(nx: int, params: dict, core_mu=None, core_hopping=False):
+    # Build Hamiltonian blocks
+    u_4 = slg.expm(1j * pi / 4 * np.identity(4)) @ slg.expm(-1j * pi / 4 * (np.kron(2 * sigma_0 - sigma_z, sigma_z)))
+    u_4 = u_4.conj().T
+
+    h_onsite = (params['m0'] - 2 * params['bxy'] - params['bz']) * gamma_3
+
+    h_x = -1j / 2 * gamma_1 + 1 / 2 * params['bxy'] * gamma_3
+    h_y = -1j / 2 * gamma_2 + 1 / 2 * params['bxy'] * gamma_3
+    h_z = 1 / 2 * params['bz'] * gamma_3
+
+    if 'c4_masses' in params:
+        h_z += -1j / 2 * (params['c4_masses'][0] * gamma_4 + params['c4_masses'][1] * gamma_5)
+
+    h_xz = -1j / 4 * params['g1'] * gamma_4
+    h_yz = 1j / 4 * params['g1'] * gamma_4
+    
+    h_xyz = 1j / 8 * params['g2'] * gamma_5
+
+    norb = 4
+
+    # Arrange blocks into full Hamiltonian
+    n_sites = number_of_sites(nx)
+
+    ham_0 = np.zeros((n_sites * norb, n_sites * norb), dtype=complex)
+    ham_z = np.zeros((n_sites * norb, n_sites * norb), dtype=complex)
+
+    # Onsite Hamiltonian
+    ham_0 += np.kron(np.identity(n_sites, dtype=complex), h_onsite)
+
+    if core_mu is not None:
+        core_inds = np.zeros(n_sites)
+        core_inds[disc_core_ind(nx)] = 1
+        ham_0 += np.kron(np.diag(core_inds), core_mu * np.identity(4))
+
+    # X-Hopping
+    x_hopping = np.kron(x_hopping_matrix(nx, core_hopping=core_hopping), h_x)
+    ham_0 += x_hopping + x_hopping.conj().T
+
+    # Y-Hopping
+    y_hopping = np.kron(y_hopping_matrix(nx, core_hopping=core_hopping), h_y)
+    ham_0 += y_hopping + y_hopping.conj().T
+
+    # XZ-Hopping
+    xz_hopping = np.kron(x_hopping_matrix(nx, core_hopping=core_hopping), h_xz)
+    ham_z += xz_hopping + xz_hopping.conj().T
+
+    # YZ-Hopping
+    yz_hopping = np.kron(y_hopping_matrix(nx, core_hopping=core_hopping), h_yz)
+    ham_z += yz_hopping + yz_hopping.conj().T
+
+    # XYz-Hopping
+    xyz_hopping = np.kron(xy_hopping_matrix(nx), h_xyz)
+    ham_z += xyz_hopping + xyz_hopping.conj().T
+
+    # Disclination Hopping
+    disc_hopping = np.kron(disclination_hopping_matrix(nx, nnn=False), np.dot(nlg.inv(u_4), h_y))
+    ham_0 += disc_hopping + disc_hopping.conj().T
+    #
+    disc_hopping = np.kron(disclination_hopping_matrix(nx, nnn=True), np.dot(nlg.inv(u_4), h_xyz))
+    ham_z += disc_hopping + disc_hopping.conj().T
+
+    return ham_0, ham_z
+
+
+def z_coord_disclination_hamiltonian(nz: int, pbc: bool, n_cdw: int, delta_phi: float, phi_cdw: float, nx: int, params: dict, core_mu=None, core_hopping=False):
+    h0, hz = disclination_hamiltonian_z_blocks(nx, params, core_mu, core_hopping)
+
+    ham = np.zeros(nz, nz, 4 * number_of_sites(nx), 4 * number_of_sites(nx))
+
+    for ii in range(nz):
+        ham[ii, ii] = h0 + delta_phi * cos( 2 * pi * ii / n_cdw + phi_cdw) * np.kron(np.identity(number_of_sites(nx)), gamma_3)
+
+    for ii in range(nz - 1):
+        ham[ii + 1, ii] = hz
+        ham[ii, ii + 1] = hz.conj().T
+    
+    if pbc:
+        ham[0, -1] = hz
+        ham[-1, 0] = hz.conj().T
+
+
+def calculate_disclination_rho(nkz: int, nx: int, model_params: dict, core_mu=None, core_hopping=False,
+                               use_gpu=True, fname='ed_disclination_rho'):
     norb = 4
 
     kz_ax = np.linspace(0, 2 * pi, nkz + 1)[:-1]
@@ -261,14 +341,14 @@ def calculate_disclination_rho(nkz: int, nx: int, m0: float, bxy: float, bz: flo
             import cupy as cp
             import cupy.linalg as clg
 
-            h = cp.asarray(disclination_hamiltonian(kz, nx, m0, bxy, bz, g1, g2, c4_masses=c4_masses, core_mu=core_mu,
+            h = cp.asarray(disclination_hamiltonian(kz, nx, model_params, core_mu=core_mu,
                                                     core_hopping=core_hopping))
 
             evals, evecs = clg.eigh(h)
             evals = evals.get()
             evecs = evecs.get()
         else:
-            h = disclination_hamiltonian(kz, nx, m0, bxy, bz, g1, g2, c4_masses=c4_masses, core_mu=core_mu,
+            h = disclination_hamiltonian(kz, nx, model_params, core_mu=core_mu,
                                          core_hopping=core_hopping)
 
             evals, evecs = nlg.eigh(h)
@@ -286,13 +366,42 @@ def calculate_disclination_rho(nkz: int, nx: int, m0: float, bxy: float, bz: flo
     rho = rho / (2 * np.pi)
 
     results = rho
-    params = (nkz, nx, m0, bxy, bz, g1, g2, c4_masses)
+    params = (nkz, nx, model_params)
     data = (results, params)
 
     with open(data_dir / (fname + '.pickle'), 'wb') as handle:
         pkl.dump(data, handle)
 
     return rho
+
+
+def calculate_disclination_ldos(energy_axis: np.ndarray, eta: float, nkz: int, nx: int, model_params: dict, core_mu=None, core_hopping=False, fname='ed_disclination_ldos'):
+    import cupy as cp
+    import cupy.linalg as clg
+
+    norb = 4
+
+    kz_ax = np.linspace(0, 2 * pi, nkz + 1)[:-1]
+
+    dk = kz_ax[1] - kz_ax[0]
+
+    ldos = cp.zeros((number_of_sites(nx), len(energy_axis)))
+
+    for kz in tqdm(kz_ax):
+        h = cp.asarray(disclination_hamiltonian(kz, nx, model_params, core_mu=core_mu,
+                                                core_hopping=core_hopping))
+        for ii, energy in enumerate(energy_axis):
+            g0 = clg.inv((energy + 1j * eta) * cp.identity(h.shape[0]) - h)            
+            ldos[:, ii] += cp.sum(cp.reshape(-cp.diag(g0).imag, (-1, norb)), axis=-1)
+
+    results = ldos.get() / pi * dk
+    params = (energy_axis, eta, nkz, nx, model_params)
+    data = (results, params)
+
+    with open(data_dir / (fname + '.pickle'), 'wb') as handle:
+        pkl.dump(data, handle)
+
+    return results
 
 
 def calculate_bound_charge(nx: int, threshold: int, rho, subtract_avg=True, exclude_core=False):
@@ -310,6 +419,20 @@ def calculate_bound_charge(nx: int, threshold: int, rho, subtract_avg=True, excl
             q_bound += q
 
     return q_bound
+
+
+def calculate_bound_ldos(nx: int, threshold: int, ldos, exclude_core=False):
+    core_ind = disc_core_ind(nx)
+
+    ldos_bound = np.zeros(ldos.shape[-1])
+
+    for ii in range(ldos.shape[0]):
+        if ii == core_ind and exclude_core:
+            continue
+        elif bulk_ind(nx, threshold, ii):
+            ldos_bound += ldos[ii]
+
+    return ldos_bound
 
 
 def response_coef(m0: float, bz: float):

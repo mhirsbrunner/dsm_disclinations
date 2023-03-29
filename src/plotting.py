@@ -57,17 +57,19 @@ def disclination_graph(nx: int):
     return graph, pos
 
 
-def plot_disclination_rho(subtract_background=False, data_fname='ed_disclination_ldos', save=True,
+def plot_disclination_rho(subtract_background=False, data_fname='ed_disclination_rho', save=True,
                           fig_fname='ed_disclination_rho', close_disc=True, threshold=None):
     results, params = utils.load_results(data_fname)
-    nkz, nx, m0, bxy, bz, g1, g2, c4_masses = params
+    nkz, nx, model_params = params
     rho = results
 
-    print(f"Parameters: {nkz=}, {nx=}, {m0=}, {bxy=}, {bz=}, {g1=}, {g2=}, {c4_masses=}")
+    print(f"Parameters: {nkz=}, {nx=}")
+    print(f"Model Parameters: {model_params}")
+
     if threshold is not None:
         print(f'Bound Charge: {disc.calculate_bound_charge(nx, threshold, rho)}')
     try:
-        print(f'Coefficient: {disc.response_coef(m0, bz)}')
+        print(f'Coefficient: {disc.response_coef(model_params["m0"], model_params["bz"])}')
     except ValueError:
         print('Coefficient: N/A (insulating phase, maybe topological!)')
 
@@ -124,7 +126,73 @@ def plot_disclination_rho(subtract_background=False, data_fname='ed_disclination
     plt.show()
 
 
-def plot_disclination_rho_vs_r(data_fname='ed_disclination_ldos', save=True,
+def plot_disclination_ldos(energy: float, data_fname='ed_disclination_ldos', save=True,
+                          fig_fname='ed_disclination_ldos', close_disc=True, threshold=None):
+
+    results, params = utils.load_results(data_fname)
+    energy_axis, eta, nkz, nx, model_params = params
+    ldos = results
+
+    if energy < energy_axis[0] or energy > energy_axis[-1]:
+        raise ValueError(f'Given energy out of bounds E=({energy_axis[0]:.2f},{energy_axis[-1]:.2f})')
+    
+    idx = (np.abs(energy_axis - energy)).argmin()
+
+    data = ldos[:, idx]
+
+    print(f"Parameters: energy={energy_axis[idx]:.2f}, {eta=}, {nkz=}, {nx=}")
+    print(f"Model Parameters: {model_params}")
+
+    try:
+        print(f'Coefficient: {disc.response_coef(model_params["m0"], model_params["bz"])}')
+    except ValueError:
+        print('Coefficient: N/A (insulating phase, maybe topological!)')
+
+    dmax = np.max(np.abs(data))
+    normalized_data = data / dmax
+
+    # Generate list of lattice sites and positions
+    x = []
+    y = []
+    graph, pos = disclination_graph(nx)
+
+    # Order the node list by the x index so the plot makes sense
+    ordered_nodes = list(graph.nodes)
+    ordered_nodes.sort(key=lambda s: s[1])
+
+    for site in ordered_nodes:
+        if close_disc:
+            coords = pos[site]
+        else:
+            coords = site
+        x.append(coords[0])
+        y.append(coords[1])
+    # Plot charge density
+    fig, ax = plt.subplots(figsize=(6, 4))
+    marker_scale = 250
+    
+    im = ax.scatter(x, y, s=marker_scale * np.abs(normalized_data), c=data, cmap='Reds', marker='o')
+
+    ax.scatter(x, y, s=2, c='black')
+    ax.set_aspect('equal')
+
+    cbar = utils.add_colorbar(im, aspect=15, pad_fraction=1.0)
+    cbar.ax.set_title('LDOS', size=14)
+    cbar.ax.tick_params(labelsize=14)
+
+    ax.margins(x=0.2)
+
+    plt.axis('off')
+    plt.tight_layout()
+
+    if save:
+        plt.savefig(figure_dir / (fig_fname + f'E_{energy:.2f}' + '.pdf'))
+        plt.savefig(figure_dir / (fig_fname + f'E_{energy:.2f}' + '.png'))
+
+    plt.show()
+
+
+def plot_disclination_rho_vs_r(data_fname='ed_disclination_rho', save=True,
                                fig_fname='ed_disclination_rho_vs_r'):
     results, params = utils.load_results(data_fname)
     nkz, nx, m0, bxy, bz, g1, g2, c4_masses = params

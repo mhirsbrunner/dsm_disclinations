@@ -4,6 +4,9 @@ from numpy import sin, cos, pi
 import matplotlib.pyplot as plt
 from pathlib import Path
 import pickle as pkl
+from tqdm import tqdm
+from itertools import product
+from joblib import Parallel, delayed
 
 # File structure
 project_src = Path(__file__).parent
@@ -141,3 +144,29 @@ def plot_band_structure(dk, m0: float, bxy: float, bz: float, g1: float, g2: flo
     plt.show()
 
     return
+
+
+def calculate_dos(energy_axis: np.ndarray, eta: float, nk: int, m0: float, bxy: float, bz: float, g1: float, g2: float,
+                               c4_masses=(0.0, 0.0), fname='dos'):
+    k_ax = np.linspace(0, 2 * pi, nk + 1)[:-1]
+
+    dk = k_ax[1] - k_ax[0]
+
+    def dos_func(energy: float):
+        temp = 0
+        for k in product(k_ax, repeat=3):
+            h = bloch_hamiltonian(k, m0, bxy, bz, g1, g2, c4_masses=c4_masses)
+            g0 = np.linalg.inv((energy + 1j * eta) * np.identity(h.shape[0]) - h)            
+            temp -= np.sum(np.diag(g0).imag)
+        return temp
+
+    dos = np.array(Parallel(n_jobs=-2)(delayed(dos_func)(e) for e in tqdm(energy_axis))) / pi * (dk ** 3)
+
+    results = dos
+    params = (energy_axis, eta, m0, bxy, bz, g1, g2, c4_masses)
+    data = (results, params)
+
+    with open(data_dir / (fname + '.pickle'), 'wb') as handle:
+        pkl.dump(data, handle)
+
+    return results
