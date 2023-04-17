@@ -2,9 +2,6 @@ import numpy as np
 import numpy.linalg as nlg
 from numpy import pi
 
-# import cupy as cp
-# import cupy.linalg as clg
-
 import matplotlib.pyplot as plt
 from mpl_toolkits import axes_grid1
 
@@ -36,40 +33,93 @@ def add_colorbar(im, aspect=20, pad_fraction=0.5, **kwargs):
 #############################
 # High Symmetry Lines Utils #
 #############################
-def high_symmetry_lines(dk: float):
+def high_symmetry_bz_path_2d(tot_nk: int):
+    """
+    Produces a list of crystal momentum points along a path traversing high-symmetry lines of the cubic BZ
+
+    Parameters
+    ----------
+    tot_nk : int
+        The desired number of points on the momentum path
+
+    Returns
+    -------
+    path: List
+        A list of approximately tot_nk crystal momentum points on the high-symmetry path
+    nodes: List
+        A list of the indices of high-symmetry points on the path
+    labels: List
+        A list of strings labeling the high-symmetry points enumerated by 'nodes'   
+
+    """
+    nk = tot_nk // (2 + np.sqrt(2))
+
     gamma = (0, 0)
     x = (pi, 0)
-    y = (0, pi)
     m = (pi, pi)
 
-    hsps = (y, gamma, x, m)
+    point_list = [gamma, x, m, gamma]
+    labels = [r'$\Gamma$', r'$X$', r'$M$', r'$\Gamma$']
+    norm_list  = [1, 1, np.sqrt(2)]
+    k_nodes = [int(np.floor(nk * norm)) for norm in norm_list]
 
-    k_nodes = [0]
+    path = []
+    for ii, norm in enumerate(norm_list):
+        ki = point_list[ii]
+        kf = point_list[ii + 1]
 
-    k0 = hsps[0]
-    k1 = hsps[1]
+        [kx, ky] = [list(np.linspace(ki[jj], kf[jj], k_nodes[ii] + 1))[:-1] for jj in range(2)]
 
-    dist = np.sqrt((k1[0] - k0[0]) ** 2 + (k1[1] - k0[1]) ** 2)
-    nk = int(dist // dk)
-    kx = np.linspace(k0[0], k1[0], nk)
-    ky = np.linspace(k0[1], k1[1], nk)
+        path = path + list(zip(kx, ky))
+    
+    path = path + [point_list[-1]]
+    
+    return path, np.cumsum([0, ] + k_nodes), labels
 
-    k_nodes.append(len(kx) - 1)
 
-    for ii, k in enumerate(hsps[2:]):
-        k0 = k1
-        k1 = k
+def high_symmetry_bz_path_3d(tot_nk: int):
+    """
+    Produces a list of crystal momentum points along a path traversing high-symmetry lines of the cubic BZ
 
-        dist = np.sqrt((k1[0] - k0[0]) ** 2 + (k1[1] - k0[1]) ** 2)
-        nk = int(dist // dk)
-        kx = np.concatenate((kx, np.linspace(k0[0], k1[0], nk + 1)[1:]))
-        ky = np.concatenate((ky, np.linspace(k0[1], k1[1], nk + 1)[1:]))
+    Parameters
+    ----------
+    tot_nk : int
+        The desired number of points on the momentum path
 
-        k_nodes.append(len(kx) - 1)
+    Returns
+    -------
+    path: List
+        A list of approximately tot_nk crystal momentum points on the high-symmetry path
+    nodes: List
+        A list of the indices of high-symmetry points on the path
+    labels: List
+        A list of strings labeling the high-symmetry points enumerated by 'nodes'   
 
-    ks = np.stack((kx, ky), axis=1)
+    """
+    nk = tot_nk // (8 + 3 * np.sqrt(2))
 
-    return ks, k_nodes
+    gamma = (0, 0, 0)
+    x = (pi, 0, 0)
+    z = (0, 0, pi)
+    m = (pi, pi, 0)
+    r = (pi, 0, pi)
+    a = (pi, pi, pi)
+
+    point_list = [gamma, x, m, gamma, z, r, a, z, a, m, x, r]
+    labels = [r'$\Gamma$', r'$X$', r'$M$', r'$\Gamma$', r'$Z$', r'$R$', r'$A$', r'$Z$', r'$A$', r'$M$', r'$X$', r'$R$']
+    norm_list  = [1, 1, np.sqrt(2), 1, 1, 1, np.sqrt(2), np.sqrt(2), 1, 1, 1]
+    k_nodes = [int(np.floor(nk * norm)) for norm in norm_list]
+
+    path = []
+    for ii, norm in enumerate(norm_list):
+        ki = point_list[ii]
+        kf = point_list[ii + 1]
+
+        [kx, ky, kz] = [list(np.linspace(ki[jj], kf[jj], k_nodes[ii] + 1))[:-1] for jj in range(3)]
+
+        path = path + list(zip(kx, ky, kz))
+    
+    return path, np.cumsum([0, ] + k_nodes), labels
 
 
 ########################
@@ -125,57 +175,6 @@ def surface_green_function(energy, h00, h01, surf_pert=None, return_bulk=False):
         return gs, gb
     else:
         return gs
-
-
-# def cp_surface_green_function(energy, h00, h01, surf_pert=None, return_bulk=False):
-#     it_max = 20
-#     tol = 1e-12
-#
-#     if surf_pert is None:
-#         cp_surf_pert = cp.zeros(h00.shape)
-#     else:
-#         cp_surf_pert = cp.asarray(surf_pert)
-#
-#     energy_mat = energy * cp.identity(h00.shape[0])
-#
-#     eps_s = cp.asarray(h00)
-#
-#     eps = cp.copy(eps_s)
-#
-#     beta = cp.asarray(h01)
-#     alpha = cp.conj(cp.transpose(beta))
-#
-#     it = 0
-#     alpha_norm = 1
-#     beta_norm = 1
-#
-#     while alpha_norm > tol or beta_norm > tol:
-#         g0_alpha = clg.solve(energy_mat - eps, alpha)
-#         g0_beta = clg.solve(energy_mat - eps, beta)
-#
-#         temp = cp.dot(alpha, g0_beta)
-#         eps_s = eps_s + temp
-#         eps = eps + temp + cp.dot(beta, g0_alpha)
-#
-#         alpha = cp.dot(alpha, g0_alpha)
-#         beta = cp.dot(beta, g0_beta)
-#
-#         alpha_norm = clg.norm(alpha)
-#         beta_norm = clg.norm(beta)
-#
-#         it += 1
-#
-#         if it > it_max:
-#             print(f'Max iterations reached. alpha_norm: {alpha_norm}, beta_norm: {beta_norm}')
-#             break
-#
-#     gs = cp.asnumpy(clg.inv(energy_mat - eps_s - cp_surf_pert))
-#
-#     if return_bulk:
-#         gb = cp.asnumpy(clg.inv(energy_mat - eps))
-#         return gs, gb
-#     else:
-#         return gs
 
 
 def spectral_function(g=None, ham=None, energy=None, eta=None) -> np.ndarray:

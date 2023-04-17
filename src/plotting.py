@@ -3,7 +3,7 @@ from matplotlib.colors import ListedColormap
 from matplotlib.ticker import MaxNLocator
 
 import networkx as netx
-import src.disclination as disc
+import disclinated_dsm as disc
 import src.utils as utils
 
 import numpy as np
@@ -67,7 +67,7 @@ def plot_disclination_rho(subtract_background=False, data_fname='ed_disclination
     print(f"Model Parameters: {model_params}")
 
     if threshold is not None:
-        print(f'Bound Charge: {disc.calculate_bound_charge(nx, threshold, rho)}')
+        print(f'Bound Charge: {disc.bound_charge_density_in_k(nx, threshold, rho)}')
     try:
         print(f'Coefficient: {disc.response_coef(model_params["m0"], model_params["bz"])}')
     except ValueError:
@@ -297,7 +297,7 @@ def plot_q_vs_coef(threshold=1, slope_guess=None, exclude_core=False, data_folde
             m0s.append(m0)
             bzs.append(bz)
             x.append(disc.response_coef(m0, bz))
-            y.append(disc.calculate_bound_charge(nx, t, rho, exclude_core=xc))
+            y.append(disc.bound_charge_density_in_k(nx, t, rho, exclude_core=xc))
 
         return x, y
 
@@ -363,7 +363,7 @@ def plot_dq_dnu(threshold=1, slope_guess=None, exclude_core=False, data_folder_n
         d_rho = np.diff(np.reshape(sorted_rhos, (sorted_rhos.shape[0] // 2, 2, -1)), axis=1).squeeze()
 
         x = list(x[-1] for x in np.reshape(sorted_coefs, (-1, 2)))
-        y = list(disc.calculate_bound_charge(nx, t, d_rho[ii], subtract_avg=True, exclude_core=xc) / d_nu[ii]
+        y = list(disc.bound_charge_density_in_k(nx, t, d_rho[ii], subtract_avg=True, exclude_core=xc) / d_nu[ii]
                  for ii in range(len(d_rho)))
 
         return x, y

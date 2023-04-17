@@ -1,11 +1,11 @@
-import src.disclination as disc
+import disclinated_dsm as disc
 import src.plotting as oplot
-import src.bloch_hamiltonian as blc
+import src.defect_free_dsm as blc
 import numpy as np
 import matplotlib.pyplot as plt
 
 # %%
-nkz = 100
+n_kz = 100
 n_x = 19
 m0 = 1.0
 bxy = 1.0
@@ -18,10 +18,10 @@ core_hopping = False
 
 print(disc.response_coef(m0, bz))
 # %%
-blc.plot_band_structure(2 * np.pi / nkz, m0, bxy, bz, g1, g2, c4_masses=c4_masses)
+blc.plot_band_structure(2 * np.pi / n_kz, m0, bxy, bz, g1, g2, c4_masses=c4_masses)
 
 # %%
-rho = disc.calculate_disc_rho(nkz, n_x, m0, bxy, bz, g1, g2, c4_masses=c4_masses, core_mu=core_mu,
+rho = disc.disc_rho_in_k(n_kz, n_x, m0, bxy, bz, g1, g2, c4_masses=c4_masses, core_mu=core_mu,
                                       core_hopping=core_hopping)
 
 # %%
@@ -33,7 +33,7 @@ coef_min = 0.05
 coef_max = 0.95
 bz_pts = 5
 data_folder_name = 'test_yes_core_mu'
-disc.calculate_bound_charge_vs_nu(nkz, n_x, m0, bxy, g1, g2, coef_min, coef_max, bz_pts, c4_masses=c4_masses,
+disc.disc_bound_charge_vs_nu(n_kz, n_x, m0, bxy, g1, g2, coef_min, coef_max, bz_pts, c4_masses=c4_masses,
                                   core_mu=core_mu, core_hopping=core_hopping, data_folder_name=data_folder_name)
 
 # %%
@@ -48,7 +48,7 @@ v = []
 
 for k_z in kz_ax:
     print(f'{k_z=:.2g}', end='\r')
-    ham = disc.disc_bloch_hamiltonian(k_z, n_x, m0, bxy, bz, g1, g2, c4_masses=c4_masses, core_mu=core_mu,
+    ham = disc.disc_bloch_ham(k_z, n_x, m0, bxy, bz, g1, g2, c4_masses=c4_masses, core_mu=core_mu,
                                         core_hopping=core_hopping)
     temp_u, temp_v = np.linalg.eigh(ham)
 
