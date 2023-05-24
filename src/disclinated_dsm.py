@@ -382,7 +382,7 @@ def cdw_bloch_ham(k_z, n_x: int, model_params: dict, cdw_params: dict, core_hopp
     n_cdw = cdw_params['n']
     delta_cdw = cdw_params['delta']
     phi_cdw = cdw_params['phi']
-    cdw_matrix = np.kron(np.identity(n_xy), gamma_3)
+    cdw_matrix = np.kron(np.identity(n_xy), cdw_params['matrix'])
     bond_centered = cdw_params['bond_centered']
 
     if delta_cdw.imag != 0:
@@ -566,7 +566,7 @@ def z_coord_disc_ham(n_z: int, pbc: bool, n_x: int, model_params: dict, cdw_para
         n_cdw = cdw_params['n']
         delta_cdw = cdw_params['delta']
         phi_cdw = cdw_params['phi']
-        cdw_matrix = np.kron(np.identity(n_xy), gamma_3)
+        cdw_matrix = np.kron(np.identity(n_xy), cdw_params['matrix'])
         bond_centered = cdw_params['bond_centered']
 
         if bond_centered:
