@@ -496,6 +496,10 @@ def disc_ham_z_blocks(n_x: int, model_params: dict, core_hopping=False):
     y_hopping = np.kron(y_hopping_matrix(n_x, core_hopping=core_hopping), h_y)
     ham_0 += y_hopping + y_hopping.conj().T
 
+    # Z-Hopping
+    z_hopping = np.kron(np.identity, n_xy, h_z)
+    ham_0 += z_hopping + z_hopping.conj().T
+
     # XZ-Hopping
     xz_hopping = np.kron(x_hopping_matrix(n_x, core_hopping=core_hopping), h_xz)
     ham_z += xz_hopping + xz_hopping.conj().T
